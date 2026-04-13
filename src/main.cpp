@@ -11,22 +11,6 @@
 //      The ESC signal line uses 50 Hz servo PWM by default. Define USE_DSHOT
 //      at compile time (see platformio.ini) to switch to DShot600.
 //
-// -----------------------------------------------------------------------------
-//                     !!!!!!  SAFETY WARNINGS  !!!!!!
-// -----------------------------------------------------------------------------
-//  You are spinning a high-power brushless motor with a rigid propeller.
-//
-//   * ALWAYS bolt the stand to a heavy fixture before powering on.
-//   * ALWAYS remove the prop before first bench tests.
-//   * ALWAYS stand OUT OF PLANE of the prop disc. Blades that let go go
-//     straight out at thousands of RPM.
-//   * Wear eye and hearing protection. A 6S setup at 100% can exceed 110 dB.
-//   * Keep a physical E-stop (battery disconnect) within arm's reach.
-//   * The software KILL command is a courtesy - do not rely on it as your
-//     only safety device. WiFi dies. Code crashes. Batteries don't.
-//   * Cross-check the calibration factor before trusting thrust numbers.
-//   * After flashing new firmware, power-cycle the ESC to re-arm cleanly.
-// =============================================================================
 
 #include <Arduino.h>
 
