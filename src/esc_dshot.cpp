@@ -1,5 +1,9 @@
 // =============================================================================
-//  esc_dshot.cpp  -  DShot600 driver (derdoktor667/DShotRMT + FreeRTOS task)
+//  esc_dshot.cpp  -  DShot600 ESC driver on top of dshot600_rmt
+// =============================================================================
+//  Previously used derdoktor667/DShotRMT, but that library needs the IDF 5.x
+//  RMT encoder headers which our Arduino-ESP32 2.0.x toolchain does not ship.
+//  We now drive the RMT peripheral directly via src/dshot600_rmt.cpp.
 // =============================================================================
 #include "esc_dshot.h"
 
@@ -10,30 +14,15 @@
 // bottom of this file so main.cpp's esc_dshot:: calls still resolve.
 #ifdef USE_DSHOT
 
-#include <DShotRMT.h>
-
+#include <Arduino.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
+#include "dshot600_rmt.h"
+
 namespace esc_dshot {
 
-// ---------------------------------------------------------------------------
-//  Library instance.
-//
-//  derdoktor667/DShotRMT v0.9.5 constructor:
-//      DShotRMT(gpio_num_t gpio,
-//               dshot_mode_t mode              = DSHOT300,
-//               bool         is_bidirectional  = false,
-//               uint16_t     magnet_count      = DEFAULT_MOTOR_MAGNET_COUNT);
-//
-//  We hard-code DSHOT600, unidirectional=false, and leave magnet_count at
-//  the library default (14) because we don't consume the RPM field.
-// ---------------------------------------------------------------------------
-static DShotRMT g_dshot((gpio_num_t)ESC_SIGNAL_PIN,
-                        DSHOT600,
-                        /*is_bidirectional=*/false);
-
-static volatile uint16_t g_throttle = 0;        // latest value to transmit
+static volatile uint16_t g_throttle = 0;  // 0..2047, 0 = disarm
 static volatile float    g_last_pct = 0.0f;
 static TaskHandle_t      g_task     = nullptr;
 
@@ -47,33 +36,35 @@ static void dshot_task(void*) {
     TickType_t last = xTaskGetTickCount();
 
     for (;;) {
-        // sendThrottle() accepts raw 11-bit throttle values. 0 is the
-        // reserved "motor stop / disarm" command.
-        g_dshot.sendThrottle(g_throttle);
+        dshot600::send(g_throttle, /*telemetry=*/false);
         vTaskDelayUntil(&last, period);
     }
 }
 
 // ---------------------------------------------------------------------------
 void begin() {
-    // Library init. Returns a dshot_result_t but we don't inspect it here
-    // beyond logging - most failures are unrecoverable anyway.
-    g_dshot.begin();
+    if (!dshot600::begin(ESC_SIGNAL_PIN)) {
+        Serial.println("[esc_dshot] RMT init failed - aborting");
+        return;
+    }
 
     // Throttle 0 = disarm. Sender task will transmit this while the ESC
     // runs its boot beeps.
     g_throttle = 0;
     g_last_pct = 0.0f;
 
-    xTaskCreatePinnedToCore(dshot_task,
-                            "dshot",
-                            2048,
-                            nullptr,
-                            configMAX_PRIORITIES - 2,   // high priority
-                            &g_task,
-                            0);                         // pin to Core 0
+    if (g_task == nullptr) {
+        xTaskCreatePinnedToCore(dshot_task,
+                                "dshot",
+                                2048,
+                                nullptr,
+                                configMAX_PRIORITIES - 2,
+                                &g_task,
+                                0);
+    }
 
-    Serial.println("[esc_dshot] DSHOT600 sender running on core 0 @ 500 Hz");
+    Serial.printf("[esc_dshot] DSHOT600 sender running on core 0 @ %u Hz\n",
+                  (unsigned)(1000 / DSHOT_PERIOD_MS));
     Serial.println("[esc_dshot] arming (throttle=0 for 3 s)...");
     delay(3000);
     Serial.println("[esc_dshot] armed");
@@ -87,7 +78,6 @@ void write_raw(uint16_t v) {
     }
     g_throttle = v;
 
-    // Track percent for logs.
     if (v == 0) {
         g_last_pct = 0.0f;
     } else {
@@ -126,7 +116,7 @@ void     begin()                   {}
 void     write_raw(uint16_t)       {}
 void     write_throttle_pct(float) {}
 void     kill()                    {}
-float    last_throttle_pct()        { return 0.f; }
+float    last_throttle_pct()       { return 0.f; }
 }
 
 #endif  // USE_DSHOT

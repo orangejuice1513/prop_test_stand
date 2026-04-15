@@ -7,16 +7,20 @@
 //  contain magic numbers. Edit this file to match your wiring / network.
 // =============================================================================
 
-// ---------------------------- WiFi credentials -------------------------------
-#define WIFI_SSID         "YOUR_SSID"
-#define WIFI_PASSWORD     "YOUR_PASSWORD"
+// ---------------------------- WiFi (AP mode) --------------------------------
+// The ESP32 creates its OWN WiFi network; the laptop joins it. No router,
+// no shared SSID. These must match the strings in listen_loadcell.py and
+// ground_station.py so the laptop side knows where to connect.
+#define WIFI_SSID         "ThrustStand"
+#define WIFI_PASSWORD     "12345678"        // >= 8 chars for WPA2
 
 // ---------------------------- Network settings -------------------------------
-// UDP streaming: ESP32 sends telemetry TO this host/port, and LISTENS for
-// command packets on UDP_LISTEN_PORT.
-#define UDP_HOST_IP       "192.168.1.100"   // laptop running receiver.py
-#define UDP_SEND_PORT     9000              // telemetry destination port
-#define UDP_LISTEN_PORT   9001              // ESP32 listens here for commands
+// In AP mode the ESP32 is always 192.168.4.1 and the first DHCP client
+// (our Mac) lands on 192.168.4.2. Telemetry is sent directly there.
+// The same port is used for both send and receive.
+#define UDP_HOST_IP       "192.168.4.2"     // laptop running ground_station.py
+#define UDP_SEND_PORT     4210              // telemetry destination port
+#define UDP_LISTEN_PORT   4210              // ESP32 listens here for commands
 #define TELEM_RATE_HZ     20                // CSV push rate (Hz)
 
 // ---------------------------- HX711 load cells -------------------------------

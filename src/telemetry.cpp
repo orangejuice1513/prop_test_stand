@@ -19,27 +19,27 @@ static const uint32_t kPeriodMs     = 1000 / TELEM_RATE_HZ;
 static char       g_rx_buf[64];
 
 // ---------------------------------------------------------------------------
+//  AP mode: the ESP32 creates its own WiFi network and the laptop joins it.
+//  The first DHCP client (the Mac) is assigned 192.168.4.2, which is what
+//  config.h's UDP_HOST_IP points at.
+// ---------------------------------------------------------------------------
+static bool g_ap_up = false;
+
 void begin() {
     g_host_ip.fromString(UDP_HOST_IP);
 
-    Serial.printf("[telemetry] connecting to \"%s\"...\n", WIFI_SSID);
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    Serial.printf("[telemetry] starting AP \"%s\"...\n", WIFI_SSID);
+    WiFi.mode(WIFI_AP);
+    g_ap_up = WiFi.softAP(WIFI_SSID, WIFI_PASSWORD);
+    delay(200);
 
-    uint32_t t0 = millis();
-    while (WiFi.status() != WL_CONNECTED && millis() - t0 < 15000) {
-        delay(250);
-        Serial.print('.');
-    }
-    Serial.println();
-
-    if (WiFi.status() == WL_CONNECTED) {
-        Serial.print("[telemetry] IP   = "); Serial.println(WiFi.localIP());
+    if (g_ap_up) {
+        Serial.print("[telemetry] AP IP = "); Serial.println(WiFi.softAPIP());
         Serial.print("[telemetry] host = "); Serial.println(g_host_ip);
         Serial.printf("[telemetry] listen port %u, send port %u @ %u Hz\n",
                       UDP_LISTEN_PORT, UDP_SEND_PORT, TELEM_RATE_HZ);
     } else {
-        Serial.println("[telemetry] WiFi FAILED - running offline");
+        Serial.println("[telemetry] softAP() FAILED - running offline");
     }
 
     g_recv_udp.begin(UDP_LISTEN_PORT);
@@ -47,7 +47,7 @@ void begin() {
 }
 
 // ---------------------------------------------------------------------------
-bool connected() { return WiFi.status() == WL_CONNECTED; }
+bool connected() { return g_ap_up; }
 
 // ---------------------------------------------------------------------------
 void maybe_send(const Sample& s) {
