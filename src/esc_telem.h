@@ -42,7 +42,10 @@ struct Frame {
     bool     valid;
 };
 
-// Initialise Serial2 on the pin defined in config.h.
+// Initialise Serial2 on the pins defined in config.h.
+// RX is wired to the APD "T" (or aux "TX") pad to receive telemetry.
+// TX is wired to the APD aux "RX" pad so we can push config bytes to the
+// ESC. If you only need RX, the TX line is harmless to leave attached.
 void begin();
 
 // Pull any waiting bytes from the UART and try to decode packets.
@@ -51,5 +54,10 @@ void update();
 
 // Return the most recently decoded frame (may be stale - check timestamp).
 Frame latest();
+
+// Push raw bytes out the aux UART (ESP TX -> ESC RX). APD's configuration
+// protocol is not a runtime control path - do NOT use this to throttle
+// the motor. Throttle still goes via the signal pin (PWM / DShot).
+size_t send_config(const uint8_t* data, size_t len);
 
 }  // namespace esc_telem

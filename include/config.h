@@ -1,10 +1,7 @@
+
 #pragma once
 // =============================================================================
 //  Propeller Test Stand - Central Configuration
-// =============================================================================
-//  All pin assignments, WiFi credentials, network ports and default
-//  calibration values live here so the rest of the codebase does not
-//  contain magic numbers. Edit this file to match your wiring / network.
 // =============================================================================
 
 // ---------------------------- WiFi (AP mode) --------------------------------
@@ -38,8 +35,29 @@
 #define LC2_DEFAULT_FACTOR  (-420.0f)
 
 // ---------------------------- ESC signal / telemetry ------------------------
-#define ESC_SIGNAL_PIN    19     // PWM / DShot output -> APD ESC signal wire
-#define ESC_TELEM_RX_PIN  13     // UART2 RX <- APD "T" telemetry wire (3.3V)
+// APD 120F3 V2 wiring:
+//
+//   Signal header (3-pin, on the side of the PCB):
+//     S  -> ESP32 GPIO 21   throttle (PWM or DShot)
+//     -  -> ESP32 GND       signal ground
+//     T  -> ESP32 GPIO 13   ESC -> ESP telemetry (115200 8N1, 3.3 V)
+//
+//   Auxiliary UART header (4-pin, on the bottom edge):
+//     +  -> NC              3.3-5V logic-only power; leave open when battery
+//                           is connected. The ESC's MCU is already powered
+//                           from the main bus.
+//     RX -> ESP32 GPIO 27   ESP -> ESC, used to push configuration commands
+//                           to the APD bootloader / config protocol
+//     TX -> ESP32 GPIO 13   ESC -> ESP, identical telemetry stream to the
+//                           "T" pad. Wire ONE OR THE OTHER, not both.
+//     G  -> ESP32 GND       UART ground
+//
+// Throttle still rides the dedicated S pin (APD does not accept throttle
+// over the aux UART) - the aux UART is purely the bidirectional config /
+// telemetry channel.
+#define ESC_SIGNAL_PIN    33     // PWM / DShot output -> APD "S" pad
+#define ESC_TELEM_RX_PIN  13     // UART2 RX <- APD "T" or aux "TX" pad
+#define ESC_AUX_TX_PIN    27     // UART2 TX -> APD aux "RX" pad (config only)
 #define ESC_TELEM_BAUD    115200 // APD F-series default
 #define ESC_TELEM_UART    2      // we use UART2 (Serial2)
 
@@ -55,8 +73,8 @@
 // ---------------------------- DShot settings --------------------------------
 // DShot600 throttle range is 48..2047. 0..47 are reserved commands.
 // This project runs DShot in UNIDIRECTIONAL mode only - RPM comes from the
-// APD "T" UART telemetry wire, not from the DShot signal line, so no
-// pull-up resistor is needed on GPIO19.
+// APD "T" / aux "TX" UART telemetry wire, not from the DShot signal line,
+// so no pull-up resistor is needed on the signal pin.
 #define DSHOT_MIN         48
 #define DSHOT_MAX         2047
 // The FreeRTOS sender task pushes a frame every DSHOT_PERIOD_MS ms.

@@ -1,8 +1,17 @@
 // =============================================================================
 //  test_esc_dshot.cpp  -  Standalone DShot600 ESC bring-up sketch
 // =============================================================================
-//  Purpose: verify that the ESP32 can talk DShot600 to the APD ESC and spin
-//  the motor, BEFORE wiring into the full UDP / telemetry pipeline.
+//  Purpose: verify that the ESP32 can talk DShot600 to the APD ESC, spin
+//  the motor, AND read voltage / current / RPM / temps over the aux UART,
+//  BEFORE wiring into the full UDP / telemetry pipeline.
+//
+//  Wiring (APD 120F3 V2):
+//      ESC "S"            -> ESP32 GPIO 21   (DShot600 signal)
+//      ESC "-" (signal)   -> ESP32 GND
+//      ESC aux "TX"       -> ESP32 GPIO 13   (UART2 RX, telemetry in)
+//      ESC aux "RX"       -> ESP32 GPIO 27   (UART2 TX, config out)
+//      ESC aux "G"        -> ESP32 GND
+//      ESC aux "+"        -> NC              (battery powers the MCU)
 //
 //  Build with the `test_esc_dshot` PlatformIO environment:
 //      pio run -e test_esc_dshot -t upload
@@ -18,6 +27,7 @@
 //      k         -> kill (DShot command 0 = motor stop / disarm)
 //      0..100    -> throttle percent (maps to DShot 48..2047)
 //      +  /  -   -> bump throttle by +/-5 %
+//      t         -> print latest telemetry frame on demand
 //      h         -> help
 // =============================================================================
 
@@ -27,13 +37,16 @@
 
 #include "config.h"
 #include "dshot600_rmt.h"
+#include "esc_telem.h"
 
-static constexpr uint32_t WATCHDOG_MS = 5000;
+static constexpr uint32_t WATCHDOG_MS    = 5000;
+static constexpr uint32_t TELEM_PRINT_MS = 500;
 
-static volatile uint16_t g_throttle    = 0;
-static float             g_last_pct    = 0.0f;
-static uint32_t          g_last_cmd_ms = 0;
-static TaskHandle_t      g_task        = nullptr;
+static volatile uint16_t g_throttle      = 0;
+static float             g_last_pct      = 0.0f;
+static uint32_t          g_last_cmd_ms   = 0;
+static uint32_t          g_last_print_ms = 0;
+static TaskHandle_t      g_task          = nullptr;
 static String            g_line;
 
 // ---------------------------------------------------------------------------
@@ -80,10 +93,25 @@ static void arm_sequence() {
     Serial.println("[dshot] armed - try '5' or '10' to start slow");
 }
 
+static void print_telem(const esc_telem::Frame& f) {
+    if (!f.valid) {
+        Serial.println("[telem] no valid frame yet (check aux UART wiring)");
+        return;
+    }
+    Serial.printf(
+        "[telem] V=%.2fV  I=%.2fA  Iphase=%.2fA  eRPM=%lu  T_mos=%.1fC  "
+        "T_cap=%.1fC  T_mcu=%.1fC  age=%lums\n",
+        f.voltage_v, f.current_a, f.phase_current_a,
+        (unsigned long)f.erpm, f.mos_temp_c, f.cap_temp_c, f.mcu_temp_c,
+        (unsigned long)(millis() - f.timestamp_ms));
+}
+
 static void print_help() {
     Serial.println();
     Serial.println("=== ESC bring-up (DShot600) ===");
     Serial.printf("signal pin = GPIO%d\n", ESC_SIGNAL_PIN);
+    Serial.printf("aux UART: RX=GPIO%d  TX=GPIO%d  @ %d baud\n",
+                  ESC_TELEM_RX_PIN, ESC_AUX_TX_PIN, ESC_TELEM_BAUD);
     Serial.printf("dshot range = %d..%d (0 = disarm)\n", DSHOT_MIN, DSHOT_MAX);
     Serial.printf("safety max throttle = %d %%\n", SAFETY_MAX_THROTTLE_PCT);
     Serial.println("Commands (type + <enter>):");
@@ -91,9 +119,12 @@ static void print_help() {
     Serial.println("  k         kill (command 0)");
     Serial.println("  0..100    throttle percent");
     Serial.println("  +/-       bump throttle by 5 %");
+    Serial.println("  t         print latest telemetry frame");
     Serial.println("  h         help");
     Serial.printf("Watchdog: throttle auto-zeros after %u ms of silence.\n",
                   (unsigned)WATCHDOG_MS);
+    Serial.printf("Telemetry auto-prints every %u ms.\n",
+                  (unsigned)TELEM_PRINT_MS);
     Serial.println();
 }
 
@@ -108,6 +139,10 @@ void setup() {
         Serial.println("[test_esc_dshot] FATAL: RMT init failed");
         while (true) delay(1000);
     }
+
+    // Bring up the aux UART so we get voltage / current / RPM readouts back
+    // from the ESC while we drive throttle on the signal pin.
+    esc_telem::begin();
 
     xTaskCreatePinnedToCore(dshot_task, "dshot",
                             2048, nullptr,
@@ -125,6 +160,7 @@ static void handle_line() {
     if      (g_line == "a") arm_sequence();
     else if (g_line == "k") disarm();
     else if (g_line == "h") print_help();
+    else if (g_line == "t") print_telem(esc_telem::latest());
     else if (g_line == "+") set_pct(g_last_pct + 5.0f);
     else if (g_line == "-") set_pct(g_last_pct - 5.0f);
     else {
@@ -143,8 +179,16 @@ void loop() {
         else            g_line += c;
     }
 
+    // Drain bytes from the aux UART and decode any complete frames.
+    esc_telem::update();
+
     if (millis() - g_last_cmd_ms > WATCHDOG_MS && g_last_pct > 0.0f) {
         Serial.println("[dshot] watchdog timeout -> throttle 0");
         set_pct(0);
+    }
+
+    if (millis() - g_last_print_ms > TELEM_PRINT_MS) {
+        g_last_print_ms = millis();
+        print_telem(esc_telem::latest());
     }
 }

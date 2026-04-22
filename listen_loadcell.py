@@ -2,19 +2,6 @@
 # =============================================================================
 #  listen_loadcell.py - Minimal UDP listener for test_loadcell_wifi.cpp
 # =============================================================================
-#  Usage:
-#      1. Flash the ESP32 with the `test_loadcell_wifi` PlatformIO env.
-#      2. On your laptop, join the "ThrustStand" WiFi network
-#         (password: 12345678).
-#      3. Run this script:     python3 listen_loadcell.py
-#      4. Press a cell with your finger; the raw counts should change.
-#      5. Ctrl-C to quit.
-#
-#  Matches the wire format of the Arduino-IDE sketch:
-#      "T1: <raw1> | T2: <raw2>"
-#
-#  Pure stdlib: no pip install needed.
-# =============================================================================
 
 import re
 import socket
@@ -67,6 +54,7 @@ def main() -> int:
             break
 
         if first:
+            # display T1 and T2 data 
             print(f"[listen] first packet from {addr[0]}:{addr[1]}")
             print(f"{'T1 (raw)':>14} {'T2 (raw)':>14} {'sum':>14}")
             first = False

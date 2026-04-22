@@ -39,13 +39,17 @@ static inline uint16_t le16(const uint8_t* p) {
 
 // ---------------------------------------------------------------------------
 void begin() {
-    // Start UART2 at APD's default 115200 8N1. We only need RX - the TX pin
-    // is passed as -1 so we don't drive any pin we don't want to drive.
-    TELEM.begin(ESC_TELEM_BAUD, SERIAL_8N1, ESC_TELEM_RX_PIN, /*tx=*/-1);
+    // Start UART2 at APD's default 115200 8N1.
+    //  RX = ESC_TELEM_RX_PIN  (APD "T" or aux "TX" pad -> ESP)
+    //  TX = ESC_AUX_TX_PIN    (ESP -> APD aux "RX" pad, for config writes)
+    // Wire only ONE telemetry source to the RX pin (T pad OR aux TX pad,
+    // never both at once - they're the same signal).
+    TELEM.begin(ESC_TELEM_BAUD, SERIAL_8N1, ESC_TELEM_RX_PIN, ESC_AUX_TX_PIN);
     g_idx = 0;
     g_latest = {};
-    Serial.printf("[esc_telem] UART%d RX=GPIO%d @ %d baud\n",
-                  ESC_TELEM_UART, ESC_TELEM_RX_PIN, ESC_TELEM_BAUD);
+    Serial.printf("[esc_telem] UART%d RX=GPIO%d TX=GPIO%d @ %d baud\n",
+                  ESC_TELEM_UART, ESC_TELEM_RX_PIN, ESC_AUX_TX_PIN,
+                  ESC_TELEM_BAUD);
 }
 
 // ---------------------------------------------------------------------------
@@ -98,5 +102,11 @@ void update() {
 
 // ---------------------------------------------------------------------------
 Frame latest() { return g_latest; }
+
+// ---------------------------------------------------------------------------
+size_t send_config(const uint8_t* data, size_t len) {
+    if (data == nullptr || len == 0) return 0;
+    return TELEM.write(data, len);
+}
 
 }  // namespace esc_telem
